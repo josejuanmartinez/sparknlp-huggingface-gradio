@@ -1,0 +1,5 @@
+spark-nlp==4.0.0
+pyspark==3.2.1
+huggingface_hub==0.8.1
+numpy==1.23.0
+gradio==3.0.20
