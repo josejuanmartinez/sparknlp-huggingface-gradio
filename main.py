@@ -1,7 +1,9 @@
+import json
+
 import sparknlp
 from sparknlp.annotator import *
 from pyspark.ml import Pipeline
-from sparknlp.base import LightPipeline
+from pyspark.sql import functions as F
 
 from hf.HFNerDLModel import HFNerDLModel
 
@@ -18,12 +20,13 @@ def start_pyspark():
 
     return spark_session
 
-def fit_pipeline(spark):
+
+def fit_pipeline(spark_session):
     """
     Returns a PySpark MLLib Pipeline, with Spark NLP basic components DocumentAssembler+Tokenizer+Embeddings) and
     an NER model, downloaded from Hugging Face Models Hub in a downstream fashion.
 
-    :param spark: SparkSession, called with the result of start_pyspark
+    :param spark_session: SparkSession, called with the result of start_pyspark
     :return: a fit PySpark Pipeline
     """
 
@@ -36,14 +39,15 @@ def fit_pipeline(spark):
         .setInputCols("document") \
         .setOutputCol("token")
 
-    glove_embeddings = WordEmbeddingsModel.pretrained()\
-        .setInputCols("sentence", "token")\
+    glove_embeddings = WordEmbeddingsModel.pretrained() \
+        .setInputCols("document", "token") \
         .setOutputCol("embeddings")
 
     # Hugging Face: Here is where the Hugging Face downstream task is carried out
-    nerdl_model = HFNerDLModel().fromPretrained("ner_ncbi_glove_100d", "./models")\
-        .setInputCols(["sentence", "token", "embeddings"])\
-        .setOutputCol("ner")
+    nerdl_model = HFNerDLModel() \
+        .setInputCols(["document", "token", "embeddings"]) \
+        .setOutputCol("ner") \
+        .fromPretrained("jjmcarrascosa/ner_ncbi_glove_100d_en", "./models")
 
     # A mixed SparkNLP+Hugging Face PySpark pipeline
     nlp_pipeline = Pipeline(stages=[
@@ -53,32 +57,39 @@ def fit_pipeline(spark):
         nerdl_model
     ])
 
-    return nlp_pipeline.fit(spark.createDataFrame([['']]).toDF("text"))
+    return nlp_pipeline.fit(spark_session.createDataFrame([['']]).toDF("text"))
 
 
-def transform_pipeline(pipe, text):
+def transform_pipeline(session, pipe, text):
     """
     Returns the result of applying a transform operation using the pipeline, to an input text.
-    We will use LightPipeline to serialize and speed up the inference, since we are not able to leverage Spark NLP
-    parallel capabilities in a single-node machine.
 
+    :param session: A Spark Session
     :param pipe: A fit pipeline with Spark NLP and a model from HF hub
     :param text: The input text to be used for Named Entity Recognition
     :return: a json with information about tokens and entities detected.
     """
-    lp_model = LightPipeline(pipe)
-    return lp_model.annotate(text)
+    result = pipe.transform(session.createDataFrame([[text]]).toDF("text"))
+    text_tokens = result.select(F.explode(F.arrays_zip('token.result', 'ner.result')).alias("cols")) \
+        .select(F.expr("cols['0']").alias("token"),
+                F.expr("cols['1']").alias("ner")).collect()
+
+    # text_json = [{'token': x.token, 'ner': x.ner} for x in text_tokens]
+    text_list = []
+    for x in text_tokens:
+        text_list.extend([(x.token, x.ner), (" ", None)])
+
+    return text_list
 
 
 if __name__ == '__main__':
     # 1. Start PySpark
-    spark = start_pyspark()
+    spark_session = start_pyspark()
     # 2. Create pipeline
-    pipeline = fit_pipeline(spark)
+    spark_pipeline = fit_pipeline(spark_session)
     # 3. Predict with input text
-    prediction = transform_pipeline(pipeline, "The patient was vomiting the night before, had a poor appetite and"
-                                              "explains she was diagnosed a month ago with gestational diabetes "
-                                              "mellitus")
+    spark_prediction = transform_pipeline(spark_session, spark_pipeline, "The patient was vomiting, had a poor appetite"
+                                                                         " and was diagnosed a month ago with "
+                                                                         "gestational diabetes mellitus")
     # 4. Return json with NER
-    print(prediction)
-    model = LightPipeline(pipeline)
+    print(spark_prediction)

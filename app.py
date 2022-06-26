@@ -8,22 +8,23 @@ description = "This demo aims to showcase how easily you can create Spark NLP pi
 
 def predict(input_text):
     # 1. Start PySpark
-    spark_session = start_pyspark()
+    spark = start_pyspark()
     # 2. Create pipeline
-    spark_pipeline = fit_pipeline(spark_session)
+    pipeline = fit_pipeline(spark)
     # 3. Predict with input text
-    spark_model = LightPipeline(spark_pipeline)
-    return spark_model.annotate(input_text)
+    prediction = transform_pipeline(spark, pipeline, input_text)
+    # 4. Return json with NER
+    return prediction
 
 
 iface = gr.Interface(fn=predict,
                      inputs=[gr.inputs.Textbox(label="input")],
-                     outputs='text',
+                     outputs='highlight',
                      title=title,
                      description=description,
-                     examples=["The patient was vomiting the night before, had a poor appetite",
-                               "The patient was diagnosed a month ago with gestational diabetes "
-                               "mellitus"],
+                     examples=["The patient was vomiting",
+                               "He had a bad appetite",
+                               "She was diagnosed a month ago with gestational diabetes mellitus"],
                      enable_queue=True)
 
 iface.launch()
