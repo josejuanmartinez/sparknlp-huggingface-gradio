@@ -1,5 +1,3 @@
-import json
-
 import sparknlp
 from sparknlp.annotator import *
 from pyspark.ml import Pipeline
@@ -8,22 +6,23 @@ from pyspark.sql import functions as F
 from hf.HFNerDLModel import HFNerDLModel
 
 
-def start_pyspark():
+def start_pyspark(verbose=False):
     """
-    Starts a PySpark session, needed for Spark NLP.
+        Starts a PySpark session, needed for Spark NLP.
     :return: SparkSession object
     """
-    spark_session = sparknlp.start()
 
-    print("Spark NLP version", sparknlp.version())
-    print("Apache Spark version:", spark_session.version)
+    session = sparknlp.start()
+    if verbose:
+        print("Spark NLP version", sparknlp.version())
+        print("Apache Spark version:", session.version)
 
-    return spark_session
+    return session
 
 
 def fit_pipeline(spark_session):
     """
-    Returns a PySpark MLLib Pipeline, with Spark NLP basic components DocumentAssembler+Tokenizer+Embeddings) and
+        Returns a PySpark MLLib Pipeline, with Spark NLP basic components DocumentAssembler+Tokenizer+Embeddings) and
     an NER model, downloaded from Hugging Face Models Hub in a downstream fashion.
 
     :param spark_session: SparkSession, called with the result of start_pyspark
@@ -31,11 +30,11 @@ def fit_pipeline(spark_session):
     """
 
     # Spark NLP: Basic components
-    documentAssembler = DocumentAssembler() \
+    document_assembler = DocumentAssembler() \
         .setInputCol("text") \
         .setOutputCol("document")
 
-    tokenizer = Tokenizer() \
+    dl_tokenizer = Tokenizer() \
         .setInputCols("document") \
         .setOutputCol("token")
 
@@ -44,17 +43,17 @@ def fit_pipeline(spark_session):
         .setOutputCol("embeddings")
 
     # Hugging Face: Here is where the Hugging Face downstream task is carried out
-    nerdl_model = HFNerDLModel() \
-        .setInputCols(["document", "token", "embeddings"]) \
+    ner_model = HFNerDLModel() \
+        .setInputCols(("document", "token", "embeddings")) \
         .setOutputCol("ner") \
         .fromPretrained("jjmcarrascosa/ner_ncbi_glove_100d_en", "./models")
 
     # A mixed SparkNLP+Hugging Face PySpark pipeline
     nlp_pipeline = Pipeline(stages=[
-        documentAssembler,
-        tokenizer,
+        document_assembler,
+        dl_tokenizer,
         glove_embeddings,
-        nerdl_model
+        ner_model
     ])
 
     return nlp_pipeline.fit(spark_session.createDataFrame([['']]).toDF("text"))
@@ -69,12 +68,16 @@ def transform_pipeline(session, pipe, text):
     :param text: The input text to be used for Named Entity Recognition
     :return: a json with information about tokens and entities detected.
     """
+    if session is None:
+        raise ValueError("Spark Session is None. This may happen if Spark Context is not initialized.")
+    if pipe is None:
+        raise ValueError("Spark MLLib / NLP Pipeline is None. Fit a pipeline before calling `transform`.")
+
     result = pipe.transform(session.createDataFrame([[text]]).toDF("text"))
     text_tokens = result.select(F.explode(F.arrays_zip('token.result', 'ner.result')).alias("cols")) \
         .select(F.expr("cols['0']").alias("token"),
                 F.expr("cols['1']").alias("ner")).collect()
 
-    # text_json = [{'token': x.token, 'ner': x.ner} for x in text_tokens]
     text_list = []
     for x in text_tokens:
         text_list.extend([(x.token, x.ner), (" ", None)])

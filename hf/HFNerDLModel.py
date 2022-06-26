@@ -21,7 +21,6 @@ class HFNerDLModel(
         self.model = None
         self.dir = None
 
-
     # camelCase is not pythonic, but SparkNLP uses SCALA naming conventions since it's a Scala library
     # so I keep using camelCase
     def setInputCols(self, value):
