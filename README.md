@@ -29,7 +29,7 @@ The main task we will resolve is Named Entity Recognition. To do that, an NER mo
 The NER model was trained using `ncib` dataset, available [here](https://github.com/cambridgeltl/MTL-Bioinformatics-2016/tree/master/data)
 
 ## Spark MLLib and Spark NLP: Pipelines
-![spark mllib pipelines](https://www.researchgate.net/publication/346766853/figure/fig3/AS:966675113455618@1607484715530/The-flow-diagram-of-a-Spark-NLP-pipeline-When-we-fit-on-the-pipeline-with-a-Spark-data.ppm)
+![spark mllib pipelines](https://miro.medium.com/max/1199/0*UmAn9E2Ak0duhb_b)
 Spark NLP leverages Spark MLlib pipelines, which means every operation is carried out by an annotator, which enriches a dataset and sends it to the next annotator in a series of "stages". There are some annotators available for generic Data Science operations in [Spark MLLib](https://spark.apache.org/mllib/), but Spark NLP is the specific library to carry out Natural Language Processing tasks.
 
 ## Motivation 
